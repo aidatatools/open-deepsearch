@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "open_deepsearch"  
-version = "0.0.1"
+version = "0.0.2"
 description = "DeepResearch but Open-Sourced, called open_deepsearch"
 readme = "README.md"
 authors = [{ name = "Jason Chuang", email = "chuangtcee@gmail.com" }]
@@ -25,3 +25,6 @@ find = {}
 
 [project.scripts]
 deepsearch = "open_deepsearch:main.main"
+
+[project.urls]
+"Homepage" = "https://github.com/aidatatools/open-deepsearch"

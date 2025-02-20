@@ -1,5 +1,5 @@
 # open-deepsearch
-open-deepsearch (DeepResearch but Open-Sourced)
+open-deepsearch ( Deep Research but Open-Sourced )
 
 ## How to install in DEV environment after git clone
 ```bash

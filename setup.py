@@ -5,13 +5,13 @@ with open('README.md', 'r') as fh:
 
 setup(
     name='open_deepsearch',
-    version='0.0.1',
+    version='0.0.2',
     author='Jason Chuang',
     author_email='chuangtcee@gmail.com',
     description='Open DeepResearch',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://github.com/aidatatools/open-deepresearch',
+    url='https://github.com/aidatatools/open-deepsearch',
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3.9",
@@ -23,9 +23,6 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.9',
-    install_requires=[
-        'setuptools>=70.0.0'
-    ],
     entry_points={
         'console_scripts': [
             'deepsearch = open_deepsearch.main:main',
@@ -36,7 +33,6 @@ setup(
     # to install your package in editable mode
     # so changes in your source code are immediately reflected
     # without needing to reinstall
-    options={'bdist_wheel': {'universal': True}},
-    setup_requires=['setuptools>=70.0.0', 'wheel'],
-    editable=True
+    options={'bdist_wheel': {'universal': False}},
+    setup_requires=['setuptools>=70.0.0', 'wheel']
 )
