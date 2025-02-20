@@ -9,3 +9,5 @@ pip install -r requirements.txt
 pip install -e .
 deepsearch
 ```
+⭐ A python port with a little more cli of 
+<https://github.com/dzhng/deep-research>
