@@ -2,6 +2,7 @@ import os
 import re
 from typing import Any, Dict, List, TypedDict
 import openai
+import aiohttp
 from tiktoken import get_encoding
 
 from .text_splitter import RecursiveCharacterTextSplitter
@@ -68,7 +69,22 @@ class FirecrawlApp:
         self.api_url = config.get('apiUrl')
 
     async def search(self, query: str, options: Dict[str, Any]) -> Dict[str, Any]:
-        # Implement the search functionality here
+        # Implement the search functionality
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json'
+        }
+        payload = {
+            'query': query,
+            'options': options
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.api_url, headers=headers, json=payload) as response:
+                if response.status != 200:
+                    raise Exception(f"Error: {response.status}")
+                return await response.json()
+
         pass
 
 # Define SearchResponse

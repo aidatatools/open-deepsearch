@@ -13,4 +13,4 @@ async def generate_feedback(query: str, num_questions: int = 3) -> List[str]:
         'prompt': f"Given the following query from the user, ask some follow up questions to clarify the research direction. Return a maximum of {num_questions} questions, but feel free to return less if the original query is clear: <query>{query}</query>",
         'schema': FeedbackSchema
     })
-    return user_feedback['object']['queries'][:num_questions]
+    return user_feedback['object']['queries'][1:1+num_questions] #skip the first question as it is the original query

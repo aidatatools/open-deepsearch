@@ -1,6 +1,6 @@
 import asyncio
 from typing import Any
-from deep_research import deep_research, write_final_report
+from open_deepsearch.deep_research import deep_research, write_final_report
 from feedback import generate_feedback
 from output_manager import OutputManager
 

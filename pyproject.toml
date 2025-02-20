@@ -24,7 +24,7 @@ dependencies = []
 find = {}
 
 [project.scripts]
-deepsearch = "open_deepsearch:main.main"
+deepsearch = "open_deepsearch:run.main"
 
 [project.urls]
 "Homepage" = "https://github.com/aidatatools/open-deepsearch"

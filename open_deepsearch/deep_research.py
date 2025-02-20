@@ -39,7 +39,7 @@ async def generate_serp_queries(query: str, num_queries: int = 3, learnings: Opt
         'schema': SerpQuerySchema
     })
     log(f"Created {len(res['object']['queries'])} queries", res['object']['queries'])
-    return res['object']['queries'][:num_queries]
+    return res['object']['queries'][1:1+num_queries]
 
 async def process_serp_result(query: str, result: SearchResponse, num_learnings: int = 3, num_follow_up_questions: int = 3) -> Dict[str, List[str]]:
     contents = [trim_prompt(item['markdown'], 25000) for item in result['data'] if item['markdown']]
@@ -66,32 +66,6 @@ async def write_final_report(prompt: str, learnings: List[str], visited_urls: Li
     urls_section = f"/n/n## Sources/n/n{''.join([f'- {url}/n' for url in visited_urls])}"
     return res['object']['reportMarkdown'] + urls_section
 
-async def deep_research(query: str, breadth: int, depth: int, learnings: Optional[List[str]] = None, visited_urls: Optional[List[str]] = None, on_progress: Optional[callable] = None) -> ResearchResult:
-    learnings = learnings or []
-    visited_urls = visited_urls or []
-    progress = ResearchProgress(current_depth=depth, total_depth=depth, current_breadth=breadth, total_breadth=breadth, total_queries=0, completed_queries=0)
-
-    def report_progress(update: Dict[str, Any]) -> None:
-        for key, value in update.items():
-            setattr(progress, key, value)
-        if on_progress:
-            on_progress(progress)
-
-    serp_queries = await generate_serp_queries(query=query, learnings=learnings, num_queries=breadth)
-    report_progress({'total_queries': len(serp_queries), 'current_query': serp_queries[0]['query'] if serp_queries else None})
-
-    with ThreadPoolExecutor(max_workers=ConcurrencyLimit) as executor:
-        loop = asyncio.get_event_loop()
-        tasks = [
-            loop.run_in_executor(executor, process_serp_query, serp_query, breadth, depth, learnings, visited_urls, progress, report_progress)
-            for serp_query in serp_queries
-        ]
-        results = await asyncio.gather(*tasks)
-
-    all_learnings = list(set([learning for result in results for learning in result['learnings']]))
-    all_visited_urls = list(set([url for result in results for url in result['visited_urls']]))
-    return ResearchResult(learnings=all_learnings, visited_urls=all_visited_urls)
-
 async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: int, learnings: List[str], visited_urls: List[str], progress: ResearchProgress, report_progress: callable) -> Dict[str, List[str]]:
     try:
         result = await firecrawl.search(serp_query['query'], {'timeout': 15000, 'limit': 5, 'scrapeOptions': {'formats': ['markdown']}})
@@ -116,3 +90,30 @@ async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: in
         else:
             log(f"Error running query: {serp_query['query']}: ", e)
         return {'learnings': [], 'visited_urls': []}
+    
+async def process_serp_query_wrapper(serp_query, breadth, depth, learnings, visited_urls, progress, report_progress):
+    return await process_serp_query({'query':serp_query}, breadth, depth, learnings, visited_urls, progress, report_progress)
+
+async def deep_research(query: str, breadth: int, depth: int, learnings: Optional[List[str]] = None, visited_urls: Optional[List[str]] = None, on_progress: Optional[callable] = None) -> ResearchResult:
+    learnings = learnings or []
+    visited_urls = visited_urls or []
+    progress = ResearchProgress(current_depth=depth, total_depth=depth, current_breadth=breadth, total_breadth=breadth, total_queries=0, completed_queries=0)
+
+    def report_progress(update: Dict[str, Any]) -> None:
+        for key, value in update.items():
+            setattr(progress, key, value)
+        if on_progress:
+            on_progress(progress)
+
+    serp_queries = await generate_serp_queries(query=query, learnings=learnings, num_queries=breadth)
+    report_progress({'total_queries': len(serp_queries), 'current_query': serp_queries[0] if serp_queries else None})
+
+    tasks = [
+        process_serp_query_wrapper(serp_query, breadth, depth, learnings, visited_urls, progress, report_progress)
+        for serp_query in serp_queries
+    ]
+    results = await asyncio.gather(*tasks)
+
+    all_learnings = list(set([learning for result in results for learning in result['learnings']]))
+    all_visited_urls = list(set([url for result in results for url in result['visited_urls']]))
+    return ResearchResult(learnings=all_learnings, visited_urls=all_visited_urls)

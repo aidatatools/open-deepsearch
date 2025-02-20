@@ -25,7 +25,7 @@ setup(
     python_requires='>=3.9',
     entry_points={
         'console_scripts': [
-            'deepsearch = open_deepsearch.main:main',
+            'deepsearch = open_deepsearch.run:main',
         ],
     },
     # This line enables editable installs
