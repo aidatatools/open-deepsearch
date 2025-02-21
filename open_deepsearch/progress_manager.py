@@ -1,4 +1,4 @@
-from deep_research import ResearchProgress
+from .research_progress_results import ResearchProgress
 
 class ProgressManager:
     def __init__(self):

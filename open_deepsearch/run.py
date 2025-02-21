@@ -1,8 +1,8 @@
 import asyncio
 from typing import Any
-from open_deepsearch.deep_research import deep_research, write_final_report
-from feedback import generate_feedback
-from output_manager import OutputManager
+from .deep_research import deep_research, write_final_report
+from .feedback import generate_feedback
+from .output_manager import OutputManager
 
 output = OutputManager()
 
@@ -42,6 +42,9 @@ async def run() -> None:
 
     print(f"\n\nFinal Report:\n\n{report}")
     print('\nReport has been saved to output.md')
+
+def main():
+    asyncio.run(run())
 
 if __name__ == '__main__':
     asyncio.run(run())

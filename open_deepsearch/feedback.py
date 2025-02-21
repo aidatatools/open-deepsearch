@@ -1,5 +1,5 @@
-from ai.providers import generate_object, custom_model
-from prompt import system_prompt
+from .ai.providers import generate_object, custom_model
+from .prompt import system_prompt
 from pydantic import BaseModel
 from typing import List
 

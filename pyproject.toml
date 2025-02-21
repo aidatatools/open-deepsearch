@@ -3,9 +3,9 @@ requires = ["setuptools>=70.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "open_deepsearch"  
-version = "0.0.2"
-description = "DeepResearch but Open-Sourced, called open_deepsearch"
+name = "open-deepsearch"  
+version = "0.0.3"
+description = "Deep Research but Open-Sourced, called open-deepsearch"
 readme = "README.md"
 authors = [{ name = "Jason Chuang", email = "chuangtcee@gmail.com" }]
 classifiers = [
@@ -24,7 +24,7 @@ dependencies = []
 find = {}
 
 [project.scripts]
-deepsearch = "open_deepsearch:run.main"
+deepsearch = "open_deepsearch.run:main"
 
 [project.urls]
 "Homepage" = "https://github.com/aidatatools/open-deepsearch"

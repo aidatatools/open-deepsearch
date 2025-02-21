@@ -4,11 +4,11 @@ with open('README.md', 'r') as fh:
     long_description = fh.read()
 
 setup(
-    name='open_deepsearch',
-    version='0.0.2',
+    name='open-deepsearch',
+    version='0.0.3',
     author='Jason Chuang',
     author_email='chuangtcee@gmail.com',
-    description='Open DeepResearch',
+    description='Deep Research but Open-Sourced, called open-deepsearch',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/aidatatools/open-deepsearch',

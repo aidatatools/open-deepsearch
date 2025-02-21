@@ -1,13 +1,13 @@
 import os
-import re
-from typing import List, Dict, Optional, Any
-from ai.providers import generate_object, custom_model, trim_prompt, FirecrawlApp, SearchResponse
-from prompt import system_prompt
-from output_manager import OutputManager
-from pydantic import BaseModel
 import asyncio
+from typing import List, Dict, Optional, Any
+
+from .research_progress_results import ResearchProgress, ResearchResult
+from .prompt import system_prompt
+from .output_manager import OutputManager
+from pydantic import BaseModel
 from concurrent.futures import ThreadPoolExecutor
-from ai.models import ResearchProgress, ResearchResult
+from .ai.providers import generate_object, custom_model, trim_prompt, FirecrawlApp, SearchResponse
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -30,6 +30,8 @@ class SerpQuerySchema(BaseModel):
 class SerpResultSchema(BaseModel):
     learnings: List[str]
     followUpQuestions: List[str]
+
+
 
 async def generate_serp_queries(query: str, num_queries: int = 3, learnings: Optional[List[str]] = None) -> List[Dict[str, str]]:
     res = await generate_object({

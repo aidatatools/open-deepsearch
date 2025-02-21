@@ -1,4 +1,5 @@
-from typing import List, Optional
+from typing import Optional, List 
+
 
 class ResearchProgress:
     def __init__(self, current_depth: int, total_depth: int, current_breadth: int, total_breadth: int, total_queries: int, completed_queries: int, current_query: Optional[str] = None):
