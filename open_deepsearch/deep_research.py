@@ -64,7 +64,7 @@ async def write_final_report(prompt: str, learnings: List[str], visited_urls: Li
         'schema': BaseModel
     })
     urls_section = f"/n/n## Sources/n/n{''.join([f'- {url}/n' for url in visited_urls])}"
-    return res['object']['reportMarkdown'] + urls_section
+    return '\n'.join(res['object']['queries']) + urls_section
 
 async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: int, learnings: List[str], visited_urls: List[str], progress: ResearchProgress, report_progress: callable) -> Dict[str, List[str]]:
     try:
