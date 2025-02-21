@@ -35,7 +35,7 @@ async def generate_serp_queries(query: str, num_queries: int = 3, learnings: Opt
     res = await generate_object({
         'model': custom_model,
         'system': system_prompt(),
-        'prompt': f"""Given the following prompt from the user, generate a list of SERP queries to research the topic. Return a maximum of {num_queries} queries, but feel free to return less if the original prompt is clear. Make sure each query is unique and not similar to each other: <prompt>{query}</prompt>/n/n""" + (f"Here are some learnings from previous research, use them to generate more specific queries: {'/n'.join(learnings)}" if learnings else ""),
+        'prompt': f"""Given the following prompt from the user, generate a list of SERP queries to research the topic. Return a maximum of {num_queries} queries, but feel free to return less if the original prompt is clear. Make sure each query is unique and not similar to each other: <prompt>{query}</prompt>\n\n""" + (f"Here are some learnings from previous research, use them to generate more specific queries: {'\n'.join(learnings)}" if learnings else ""),
         'schema': SerpQuerySchema
     })
     log(f"Created {len(res['object']['queries'])} queries", res['object']['queries'])
@@ -49,21 +49,21 @@ async def process_serp_result(query: str, result: SearchResponse, num_learnings:
         'model': custom_model,
         'abortSignal': asyncio.TimeoutError(60),
         'system': system_prompt(),
-        'prompt': f"""Given the following contents from a SERP search for the query <query>{query}</query>, generate a list of learnings from the contents. Return a maximum of {num_learnings} learnings, but feel free to return less if the contents are clear. Make sure each learning is unique and not similar to each other. The learnings should be concise and to the point, as detailed and information dense as possible. Make sure to include any entities like people, places, companies, products, things, etc in the learnings, as well as any exact metrics, numbers, or dates. The learnings will be used to research the topic further./n/n<contents>{''.join([f'<content>/n{content}/n</content>' for content in contents])}</contents>""",
+        'prompt': f"""Given the following contents from a SERP search for the query <query>{query}</query>, generate a list of learnings from the contents. Return a maximum of {num_learnings} learnings, but feel free to return less if the contents are clear. Make sure each learning is unique and not similar to each other. The learnings should be concise and to the point, as detailed and information dense as possible. Make sure to include any entities like people, places, companies, products, things, etc in the learnings, as well as any exact metrics, numbers, or dates. The learnings will be used to research the topic further.\n\n<contents>{''.join([f'<content>\n{content}\n</content>' for content in contents])}</contents>""",
         'schema': SerpResultSchema
     })
     log(f"Created {len(res['object']['learnings'])} learnings", res['object']['learnings'])
     return res['object']
 
 async def write_final_report(prompt: str, learnings: List[str], visited_urls: List[str]) -> str:
-    learnings_string = trim_prompt(''.join([f'<learning>/n{learning}/n</learning>' for learning in learnings]), 150000)
+    learnings_string = trim_prompt(''.join([f'<learning>\n{learning}\n</learning>' for learning in learnings]), 150000)
     res = await generate_object({
         'model': custom_model,
         'system': system_prompt(),
-        'prompt': f"""Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as as detailed as possible, aim for 3 or more pages, include ALL the learnings from research:/n/n<prompt>{prompt}</prompt>/n/nHere are all the learnings from previous research:/n/n<learnings>/n{learnings_string}/n</learnings>""",
+        'prompt': f"""Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as as detailed as possible, aim for 3 or more pages, include ALL the learnings from research:\n\n<prompt>{prompt}</prompt>\n\nHere are all the learnings from previous research:\n\n<learnings>\n{learnings_string}\n</learnings>""",
         'schema': BaseModel
     })
-    urls_section = f"/n/n## Sources/n/n{''.join([f'- {url}/n' for url in visited_urls])}"
+    urls_section = f"\n\n## Sources\n\n{''.join([f'- {url}\n' for url in visited_urls])}"
     return '\n'.join(res['object']['queries']) + urls_section
 
 async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: int, learnings: List[str], visited_urls: List[str], progress: ResearchProgress, report_progress: callable) -> Dict[str, List[str]]:
@@ -79,7 +79,7 @@ async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: in
         if new_depth > 0:
             log(f"Researching deeper, breadth: {new_breadth}, depth: {new_depth}")
             report_progress({'current_depth': new_depth, 'current_breadth': new_breadth, 'completed_queries': progress.completed_queries + 1, 'current_query': serp_query['query']})
-            next_query = f"Previous research goal: {serp_query['researchGoal']}/nFollow-up research directions: {''.join([f'/n{q}' for q in new_learnings['followUpQuestions']])}".strip()
+            next_query = f"Previous research goal: {serp_query['researchGoal']}\nFollow-up research directions: {''.join([f'\n{q}' for q in new_learnings['followUpQuestions']])}".strip()
             return await deep_research(query=next_query, breadth=new_breadth, depth=new_depth, learnings=all_learnings, visited_urls=all_urls, on_progress=report_progress)
         else:
             report_progress({'current_depth': 0, 'completed_queries': progress.completed_queries + 1, 'current_query': serp_query['query']})
