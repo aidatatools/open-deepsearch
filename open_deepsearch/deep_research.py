@@ -2,12 +2,11 @@ import os
 import asyncio
 from typing import List, Dict, Optional, Any
 
-from .research_progress_results import ResearchProgress, ResearchResult
-from .prompt import system_prompt
-from .output_manager import OutputManager
+from research_progress_results import ResearchProgress, ResearchResult
+from prompt import system_prompt
+from output_manager import OutputManager
 from pydantic import BaseModel
-from concurrent.futures import ThreadPoolExecutor
-from .ai.providers import generate_object, custom_model, trim_prompt, FirecrawlApp, SearchResponse
+from ai.providers import generate_object, custom_model, trim_prompt, WebCrawlerApp, FirecrawlApp, TavilySearch, SearchResponse
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -19,10 +18,10 @@ def log(*args: Any) -> None:
 
 ConcurrencyLimit = 2
 
-firecrawl = FirecrawlApp({
-    'apiKey': os.getenv('FIRECRAWL_KEY', ''),
-    'apiUrl': os.getenv('FIRECRAWL_BASE_URL')
-})
+#crawler = WebCrawlerApp()
+crawler = FirecrawlApp()
+
+searchclient = TavilySearch()
 
 class SerpQuerySchema(BaseModel):
     queries: List[Dict[str, str]]
@@ -30,8 +29,6 @@ class SerpQuerySchema(BaseModel):
 class SerpResultSchema(BaseModel):
     learnings: List[str]
     followUpQuestions: List[str]
-
-
 
 async def generate_serp_queries(query: str, num_queries: int = 3, learnings: Optional[List[str]] = None) -> List[Dict[str, str]]:
     res = await generate_object({
@@ -70,11 +67,20 @@ async def write_final_report(prompt: str, learnings: List[str], visited_urls: Li
 
 async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: int, learnings: List[str], visited_urls: List[str], progress: ResearchProgress, report_progress: callable) -> Dict[str, List[str]]:
     try:
-        result = await firecrawl.search(serp_query['query'], {'timeout': 15000, 'limit': 5, 'scrapeOptions': {'formats': ['markdown']}})
-        new_urls = [item['url'] for item in result['data'] if item['url']]
+        log(f"Searching for query: {serp_query['query']}")
+        result = searchclient.search(serp_query['query'], max_results=depth)
+        log(f"Search results: {result}")
+        new_urls = [item['url'] for item in result]
+        log(f"New URLs: {new_urls}")
+
+        markdown_results=[]
+        for url in new_urls:
+            markdown_content = await crawler.crawl_url(url)
+            markdown_results.append({'markdown': markdown_content, 'url': url})
+
         new_breadth = (breadth + 1) // 2
         new_depth = depth - 1
-        new_learnings = await process_serp_result(query=serp_query['query'], result=result, num_follow_up_questions=new_breadth)
+        new_learnings = await process_serp_result(query=serp_query['query'], result={'data': markdown_results}, num_follow_up_questions=new_breadth)
         all_learnings = learnings + new_learnings['learnings']
         all_urls = visited_urls + new_urls
 

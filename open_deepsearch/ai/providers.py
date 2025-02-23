@@ -1,8 +1,13 @@
-import os
-import re
+import os, re
 from typing import Any, Dict, List, TypedDict
 import openai
 import aiohttp
+from tavily import TavilyClient
+from crawl4ai import AsyncWebCrawler
+from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
+from dotenv import load_dotenv
+import html2text
+
 from tiktoken import get_encoding
 
 from .text_splitter import RecursiveCharacterTextSplitter
@@ -18,6 +23,9 @@ custom_model = os.getenv('OPENAI_MODEL', 'o3-mini')
 
 MIN_CHUNK_SIZE = 140
 encoder = get_encoding('o200k_base')
+
+TAVILY_API_KEY = os.getenv('TAVILY_API_KEY')
+FIRECRAWL_KEY = os.getenv('FIRECRAWL_KEY')
 
 # Trim prompt to maximum context size
 def trim_prompt(prompt: str, context_size: int = int(os.getenv('CONTEXT_SIZE', 128000))) -> str:
@@ -60,32 +68,78 @@ async def generate_object(params: Dict[str, Any]) -> Dict[str, Any]:
     # Split the content by both '\n\n' and '\n  \n'
     questions = re.split(r'\s*\n', content)
     return {'object':{'queries': questions}}
+
+# Define Search top few number of urls by tavily_client
+class TavilySearch:
+    def __init__(self):
+        self.name = 'tavily.TavilySearch'
+        self.tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
+
+    def search(self, query: str, max_results: int) -> List[Dict[str, Any]]:
+        # Perform search with TAVily API (top results)
+        # Extract the string between double quotes
+        match = re.search(r'"(.*?)"', query)
+        if match:
+            query = match.group(1)
+        else:
+            query = re.sub(r'[*-]', '', query)
+        
+        search_results = self.tavily_client.search(query, max_results=max_results)
+        
+        # Extract URLs from search results and filter out google.com results
+        urls = [{'url': result["url"], 'title': result["title"]} for result in search_results["results"] if "google.com" not in result["url"]]
+        return urls    
+
+# Define WebCrawlerApp
+class WebCrawlerApp:
+    def __init__(self):
+        self.name = 'crawl4ai.AsyncWebCrawler'
+
+    async def crawl_url(self, url: str) -> str:
+        try:
+            crawler = AsyncWebCrawler(verbose=True)
+            # Crawl the URL asynchronously
+            result = await crawler.arun(url=url)
+            
+            # Check if crawl was successful
+            if result.success:
+                print(f"\nCrawled {url}:")
+                print(f"Content (first 200 chars): {result.html[:200]}...")
+                
+                # Convert HTML to Markdown
+                converter = html2text.HTML2Text()
+                converter.ignore_links = False  # Set to True to ignore links
+                markdown_content = converter.handle(result.html)
+                return markdown_content
+            else:
+                print(f"Failed to crawl {url}: {result.error_message}")
+                
+        except Exception as e:
+            print(f"Error crawling {url}: {str(e)}")
     
 
 # Define FirecrawlApp
 class FirecrawlApp:
-    def __init__(self, config: Dict[str, str]):
-        self.api_key = config.get('apiKey')
-        self.api_url = config.get('apiUrl')
+    def __init__(self):
+        self.api_key = FIRECRAWL_KEY
+        #self.api_url = config.get('apiUrl')
 
-    async def search(self, query: str, options: Dict[str, Any]) -> Dict[str, Any]:
-        # Implement the search functionality
-        headers = {
-            'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json'
-        }
-        payload = {
-            'query': query,
-            'options': options
-        }
+    async def crawl_url(self, url: str) -> str:
+        app = FirecrawlApp(api_key=self.api_key)
+        # Scrape the URL
+        scrape_result = app.scrape_url(url, params={'formats': ['markdown']})
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.api_url, headers=headers, json=payload) as response:
-                if response.status != 200:
-                    raise Exception(f"Error: {response.status}")
-                return await response.json()
+        # Check if the scrape was successful
+        if scrape_result['success']:
+            # Retrieve the markdown content
+            markdown_content = scrape_result['data']['markdown']
+            # Print the first 500 characters of the markdown content
+            print(markdown_content[:500])
+            return markdown_content
+        else:
+            print("Scraping failed:", scrape_result.get('error', 'Unknown error'))
+        
 
-        pass
 
 # Define SearchResponse
 class SearchResponseItem(TypedDict):

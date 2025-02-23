@@ -1,5 +1,5 @@
 from typing import Any
-from .research_progress_results import ResearchProgress
+from research_progress_results import ResearchProgress
 
 class OutputManager:
     def __init__(self):
