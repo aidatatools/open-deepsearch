@@ -1,10 +1,9 @@
 import os, re
 from typing import Any, Dict, List, TypedDict
 import openai
-import aiohttp
 from tavily import TavilyClient
 from crawl4ai import AsyncWebCrawler
-from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
+from firecrawl import FirecrawlApp
 from dotenv import load_dotenv
 import html2text
 
@@ -50,7 +49,7 @@ def trim_prompt(prompt: str, context_size: int = int(os.getenv('CONTEXT_SIZE', 1
     return trim_prompt(trimmed_prompt, context_size)
 
 # Generate object function
-async def generate_object(params: Dict[str, Any]) -> Dict[str, Any]:
+async def generate_object(params: Dict[str, Any], is_getting_queries: bool = True) -> Dict[str, Any]:
     response = openai.chat.completions.create(
         model=params['model'],
         messages=[
@@ -66,8 +65,21 @@ async def generate_object(params: Dict[str, Any]) -> Dict[str, Any]:
     content = response.choices[0].message.content.strip()
 
     # Split the content by both '\n\n' and '\n  \n'
-    questions = re.split(r'\s*\n', content)
-    return {'object':{'queries': questions}}
+    results = re.split(r'\s*\n', content)
+    queries = []
+    research_goals = []
+
+    for result in results:
+        if re.match(r'^\d+\.', result):
+            queries.append(result)
+        else:
+            research_goals.append(result)
+
+    if is_getting_queries:
+        return {'object': {'queries': queries, 'researchGoal': research_goals}}
+    else:
+        return {'object': {'learnings': queries, 'followUpQuestions': queries}}
+
 
 # Define Search top few number of urls by tavily_client
 class TavilySearch:
@@ -118,26 +130,21 @@ class WebCrawlerApp:
             print(f"Error crawling {url}: {str(e)}")
     
 
-# Define FirecrawlApp
-class FirecrawlApp:
+# Define WebFirecrawlApp
+class WebFirecrawlApp:
     def __init__(self):
         self.api_key = FIRECRAWL_KEY
         #self.api_url = config.get('apiUrl')
 
     async def crawl_url(self, url: str) -> str:
-        app = FirecrawlApp(api_key=self.api_key)
-        # Scrape the URL
-        scrape_result = app.scrape_url(url, params={'formats': ['markdown']})
-
-        # Check if the scrape was successful
-        if scrape_result['success']:
-            # Retrieve the markdown content
-            markdown_content = scrape_result['data']['markdown']
-            # Print the first 500 characters of the markdown content
-            print(markdown_content[:500])
-            return markdown_content
-        else:
-            print("Scraping failed:", scrape_result.get('error', 'Unknown error'))
+        try:
+            app = FirecrawlApp(api_key=self.api_key)
+            # Scrape the URL
+            scrape_result = app.scrape_url(url, params={'formats': ['markdown']})
+            return scrape_result['markdown']
+            
+        except Exception as e:
+            print(f"Error scraping {url}: {str(e)}")
         
 
 

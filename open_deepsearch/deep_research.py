@@ -1,12 +1,15 @@
-import os
+import re
 import asyncio
 from typing import List, Dict, Optional, Any
+from PyPDF2 import PdfFileReader
+from io import BytesIO
+import requests
 
 from research_progress_results import ResearchProgress, ResearchResult
 from prompt import system_prompt
 from output_manager import OutputManager
 from pydantic import BaseModel
-from ai.providers import generate_object, custom_model, trim_prompt, WebCrawlerApp, FirecrawlApp, TavilySearch, SearchResponse
+from ai.providers import generate_object, custom_model, trim_prompt, WebCrawlerApp,WebFirecrawlApp, TavilySearch, SearchResponse
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -19,7 +22,7 @@ def log(*args: Any) -> None:
 ConcurrencyLimit = 2
 
 #crawler = WebCrawlerApp()
-crawler = FirecrawlApp()
+crawler = WebFirecrawlApp()
 
 searchclient = TavilySearch()
 
@@ -37,8 +40,19 @@ async def generate_serp_queries(query: str, num_queries: int = 3, learnings: Opt
         'prompt': f"""Given the following prompt from the user, generate a list of SERP queries to research the topic. Return a maximum of {num_queries} queries, but feel free to return less if the original prompt is clear. Make sure each query is unique and not similar to each other: <prompt>{query}</prompt>\n\n""" + (f"Here are some learnings from previous research, use them to generate more specific queries: {'\n'.join(learnings)}" if learnings else ""),
         'schema': SerpQuerySchema
     })
-    log(f"Created {len(res['object']['queries'])} queries", res['object']['queries'])
-    return res['object']['queries'][1:1+num_queries]
+    # Separate queries that start with a number followed by a period
+    filtered_queries = [query for query in res['object']['queries'] if re.match(r'^\d+\.', query)]
+    research_goals = [goals for goals in res['object']['researchGoal'] if goals.startswith('  ')]
+
+    ans = {}
+    ans['object'] = {}
+    ans['object']['queries'] = filtered_queries[:num_queries]
+    ans['object']['researchGoal'] = research_goals[:num_queries]
+    
+    log(f"Created {len(ans['object']['queries'])} queries", ans['object']['queries'])
+    log(f"Created {len(ans['object']['researchGoal'])} research goals", ans['object']['researchGoal'])
+    
+    return ans['object']
 
 async def process_serp_result(query: str, result: SearchResponse, num_learnings: int = 3, num_follow_up_questions: int = 3) -> Dict[str, List[str]]:
     contents = [trim_prompt(item['markdown'], 25000) for item in result['data'] if item['markdown']]
@@ -50,7 +64,7 @@ async def process_serp_result(query: str, result: SearchResponse, num_learnings:
         'system': system_prompt(),
         'prompt': f"""Given the following contents from a SERP search for the query <query>{query}</query>, generate a list of learnings from the contents. Return a maximum of {num_learnings} learnings, but feel free to return less if the contents are clear. Make sure each learning is unique and not similar to each other. The learnings should be concise and to the point, as detailed and information dense as possible. Make sure to include any entities like people, places, companies, products, things, etc in the learnings, as well as any exact metrics, numbers, or dates. The learnings will be used to research the topic further.\n\n<contents>{''.join([f'<content>\n{content}\n</content>' for content in contents])}</contents>""",
         'schema': SerpResultSchema
-    })
+    }, is_getting_queries=False)
     log(f"Created {len(res['object']['learnings'])} learnings", res['object']['learnings'])
     return res['object']
 
@@ -62,7 +76,7 @@ async def write_final_report(prompt: str, learnings: List[str], visited_urls: Li
         'prompt': f"""Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as as detailed as possible, aim for 3 or more pages, include ALL the learnings from research:\n\n<prompt>{prompt}</prompt>\n\nHere are all the learnings from previous research:\n\n<learnings>\n{learnings_string}\n</learnings>""",
         'schema': BaseModel
     })
-    urls_section = f"\n\n## Sources\n\n{''.join([f'- {url}\n' for url in visited_urls])}"
+    urls_section = f"\n\n## Sources\n\n{''.join([f'- <{url}>\n' for url in visited_urls])}"
     return '\n'.join(res['object']['queries']) + urls_section
 
 async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: int, learnings: List[str], visited_urls: List[str], progress: ResearchProgress, report_progress: callable) -> Dict[str, List[str]]:
@@ -75,8 +89,22 @@ async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: in
 
         markdown_results=[]
         for url in new_urls:
-            markdown_content = await crawler.crawl_url(url)
-            markdown_results.append({'markdown': markdown_content, 'url': url})
+
+            if url.endswith('.pdf'):               
+                response = requests.get(url)
+                pdf_content = BytesIO(response.content)
+                pdf_reader = PdfFileReader(pdf_content)
+                text = ""
+                for page_num in range(pdf_reader.getNumPages()):
+                    text += pdf_reader.getPage(page_num).extract_text()
+                markdown_results.append({'markdown': text, 'url': url})
+                visited_urls.append(url)  
+                
+            else:
+                markdown_content = await crawler.crawl_url(url)
+                markdown_results.append({'markdown': markdown_content, 'url': url})
+                visited_urls.append(url) 
+                           
 
         new_breadth = (breadth + 1) // 2
         new_depth = depth - 1
@@ -114,7 +142,7 @@ async def deep_research(query: str, breadth: int, depth: int, learnings: Optiona
             on_progress(progress)
 
     serp_queries = await generate_serp_queries(query=query, learnings=learnings, num_queries=breadth)
-    report_progress({'total_queries': len(serp_queries), 'current_query': serp_queries[0] if serp_queries else None})
+    report_progress({'total_queries': len(serp_queries['queries']), 'current_query': serp_queries['queries'][0] if serp_queries else None})
 
     tasks = [
         process_serp_query_wrapper(serp_query, breadth, depth, learnings, visited_urls, progress, report_progress)
@@ -123,5 +151,5 @@ async def deep_research(query: str, breadth: int, depth: int, learnings: Optiona
     results = await asyncio.gather(*tasks)
 
     all_learnings = list(set([learning for result in results for learning in result['learnings']]))
-    all_visited_urls = list(set([url for result in results for url in result['visited_urls']]))
+    all_visited_urls = list(set(visited_urls))  # Ensure unique URLs
     return ResearchResult(learnings=all_learnings, visited_urls=all_visited_urls)

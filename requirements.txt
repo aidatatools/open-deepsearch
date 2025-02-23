@@ -7,3 +7,4 @@ firecrawl-py>=1.12.0
 typer>=0.9.0
 prompt-toolkit>=3.0.0
 pydantic==2.10.6
+pypdf2==3.0.1
