@@ -3,14 +3,13 @@ import asyncio
 from typing import List, Dict, Optional, Any
 from PyPDF2 import PdfFileReader
 from io import BytesIO
-import requests
+from pydantic import BaseModel
 
 from open_deepsearch.feedback import generate_object
-from research_progress_results import ResearchProgress, ResearchResult
-from prompt import system_prompt
-from output_manager import OutputManager
-from pydantic import BaseModel
-from ai.providers import  custom_model, trim_prompt, WebFirecrawlApp, WebCrawlerApp, TavilySearch, SearchResponse
+from .research_progress_results import ResearchProgress, ResearchResult
+from .prompt import system_prompt
+from .output_manager import OutputManager
+from .ai.providers import  custom_model, trim_prompt, WebFirecrawlApp, WebCrawlerApp, TavilySearch, SearchResponse
 
 output = OutputManager()
 
@@ -63,7 +62,7 @@ async def process_serp_result(query: str, result: SearchResponse, num_learnings:
         'prompt': f"""Given the following contents from a SERP search for the query <query>{query}</query>, generate a list of learnings from the contents. Return a maximum of {num_learnings} learnings, but feel free to return less if the contents are clear. Make sure each learning is unique and not similar to each other. The learnings should be concise and to the point, as detailed and information dense as possible. Make sure to include any entities like people, places, companies, products, things, etc in the learnings, as well as any exact metrics, numbers, or dates. The learnings will be used to research the topic further.\n\n<contents>{''.join([f'<content>\n{content}\n</content>' for content in contents])}</contents>""",
         'schema': SerpResultSchema
     }, is_getting_queries=False)
-    log(f"Created {len(res['object']['learnings'])} learnings", res['object']['learnings'])
+    #log(f"Created {len(res['object']['learnings'])} learnings", res['object']['learnings'])
     return res['object']
 
 async def write_final_report(prompt: str, learnings: List[str], visited_urls: List[str]) -> str:
@@ -71,12 +70,12 @@ async def write_final_report(prompt: str, learnings: List[str], visited_urls: Li
     res = await generate_object({
         'model': custom_model,
         'system': system_prompt(),
-        'prompt': f"""Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as as detailed as possible, aim for 3 or more pages, include ALL the learnings from research:\n\n<prompt>{prompt}</prompt>\n\nHere are all the learnings from previous research:\n\n<learnings>\n{learnings_string}\n</learnings>""",
+        'prompt': f"""Please write a final report on the topic using the learnings from research. ALL the learnings from research is below : {learnings_string}""",
         'schema': BaseModel
-    },is_getting_queries=False)
+    },is_getting_queries=False, is_final_report=True)
 
     urls_section = f"\n\n## Sources\n\n{''.join([f'- <{url}>\n' for url in visited_urls])}"
-    return '\n'.join(res['object']['learnings']) + urls_section
+    return (res['object']['content']) + urls_section
 
 async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: int, learnings: List[str], visited_urls: List[str], progress: ResearchProgress, report_progress: callable) -> Dict[str, List[str]]:
     try:
@@ -144,15 +143,23 @@ async def deep_research(query: str, breadth: int, depth: int, learnings: Optiona
     learnings = learnings or []
     visited_urls = visited_urls or []
     progress = ResearchProgress(current_depth=depth, total_depth=depth, current_breadth=breadth, total_breadth=breadth, total_queries=0, completed_queries=0)
-
+    
     def report_progress(update: Dict[str, Any]) -> None:
-        print("report_progress called with:", update)  # Add this line 
+        print("report_progress called with:", update, "type:", type(update))  # Add type information
         try:
-            tmp = update.items()
+            if not isinstance(update, dict):
+                print(f"Warning: update is not a dictionary, it is {type(update)}")
+                return
+                
             for key, value in update.items():
+                if not hasattr(progress, key):
+                    print(f"Warning: progress object has no attribute '{key}'")
+                    continue
                 setattr(progress, key, value)
-        except AttributeError as e:
-            print(f"Attribute ERROR: {e}")
+        except Exception as e:
+            print(f"Error in report_progress: {str(e)}")
+            print(f"Update object: {update}")
+            print(f"Progress object attributes: {dir(progress)}")
 
         if on_progress:
             on_progress(progress)

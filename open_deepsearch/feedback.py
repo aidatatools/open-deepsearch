@@ -1,5 +1,5 @@
-from ai.providers import custom_model
-from prompt import system_prompt
+from .ai.providers import custom_model
+from .prompt import system_prompt
 from pydantic import BaseModel
 from typing import List
 import re
@@ -18,7 +18,7 @@ async def generate_feedback(query: str, num_questions: int = 3) -> List[str]:
     })
     return user_feedback['object']['queries'][:num_questions] 
 
-async def generate_object(params: Dict[str, Any], is_getting_queries: bool = True) -> Dict[str, Any]:
+async def generate_object(params: Dict[str, Any], is_getting_queries: bool = True, is_final_report: bool = False) -> Dict[str, Any]:
     response = openai.chat.completions.create(
         model=params['model'],
         messages=[
@@ -32,6 +32,9 @@ async def generate_object(params: Dict[str, Any], is_getting_queries: bool = Tru
         stop=params.get('stop', None)
     )
     content = response.choices[0].message.content.strip()
+
+    if is_final_report:
+        return {'object': {'content': content}}
 
     # Split the content by both '\n\n' and '\n  \n'
     results = re.split(r'\s*\n', content)
@@ -47,6 +50,12 @@ async def generate_object(params: Dict[str, Any], is_getting_queries: bool = Tru
     if is_getting_queries:
         return {'object': {'queries': queries, 'researchGoal': research_goals}}
     else:
-        #followQuestions = generate_feedback(queries)
-        return {'object': {'learnings': queries, 'followUpQuestions': queries}}
+        if len(research_goals)==0:
+            if len(queries) == 0:
+                return {'object': {'learnings': results, 'followUpQuestions': []}}
+            else:
+                return {'object': {'learnings': queries, 'followUpQuestions': queries}}
+        else :
+            return {'object': {'learnings': research_goals, 'followUpQuestions': queries}}
+        
 
