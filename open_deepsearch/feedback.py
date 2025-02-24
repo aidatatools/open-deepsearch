@@ -1,7 +1,10 @@
-from ai.providers import generate_object, custom_model
+from ai.providers import custom_model
 from prompt import system_prompt
 from pydantic import BaseModel
 from typing import List
+import re
+import openai
+from typing import Any, Dict, List
 
 class FeedbackSchema(BaseModel):
     questions: List[str]
@@ -14,3 +17,36 @@ async def generate_feedback(query: str, num_questions: int = 3) -> List[str]:
         'schema': FeedbackSchema
     })
     return user_feedback['object']['queries'][:num_questions] 
+
+async def generate_object(params: Dict[str, Any], is_getting_queries: bool = True) -> Dict[str, Any]:
+    response = openai.chat.completions.create(
+        model=params['model'],
+        messages=[
+            {"role": "system", "content": params['system']},
+            {"role": "user", "content": params['prompt']}
+        ],
+        max_tokens=params.get('max_tokens', 1000),
+        temperature=params.get('temperature', 0.7),
+        top_p=params.get('top_p', 1.0),
+        n=params.get('n', 1),
+        stop=params.get('stop', None)
+    )
+    content = response.choices[0].message.content.strip()
+
+    # Split the content by both '\n\n' and '\n  \n'
+    results = re.split(r'\s*\n', content)
+    queries = []
+    research_goals = []
+
+    for result in results:
+        if re.match(r'^\d+\.', result):
+            queries.append(result)
+        elif result.startswith('  '):
+            research_goals.append(result)
+
+    if is_getting_queries:
+        return {'object': {'queries': queries, 'researchGoal': research_goals}}
+    else:
+        #followQuestions = generate_feedback(queries)
+        return {'object': {'learnings': queries, 'followUpQuestions': queries}}
+

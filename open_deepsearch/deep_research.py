@@ -5,26 +5,24 @@ from PyPDF2 import PdfFileReader
 from io import BytesIO
 import requests
 
+from open_deepsearch.feedback import generate_object
 from research_progress_results import ResearchProgress, ResearchResult
 from prompt import system_prompt
 from output_manager import OutputManager
 from pydantic import BaseModel
-from ai.providers import generate_object, custom_model, trim_prompt, WebCrawlerApp,WebFirecrawlApp, TavilySearch, SearchResponse
-
-from dotenv import load_dotenv
-load_dotenv()
+from ai.providers import  custom_model, trim_prompt, WebFirecrawlApp, WebCrawlerApp, TavilySearch, SearchResponse
 
 output = OutputManager()
 
 def log(*args: Any) -> None:
     output.log(*args)
 
-ConcurrencyLimit = 2
+ConcurrencyLimit = 1
 
 #crawler = WebCrawlerApp()
 crawler = WebFirecrawlApp()
 
-searchclient = TavilySearch()
+#searchclient = TavilySearch()
 
 class SerpQuerySchema(BaseModel):
     queries: List[Dict[str, str]]
@@ -75,16 +73,25 @@ async def write_final_report(prompt: str, learnings: List[str], visited_urls: Li
         'system': system_prompt(),
         'prompt': f"""Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as as detailed as possible, aim for 3 or more pages, include ALL the learnings from research:\n\n<prompt>{prompt}</prompt>\n\nHere are all the learnings from previous research:\n\n<learnings>\n{learnings_string}\n</learnings>""",
         'schema': BaseModel
-    })
+    },is_getting_queries=False)
+
     urls_section = f"\n\n## Sources\n\n{''.join([f'- <{url}>\n' for url in visited_urls])}"
-    return '\n'.join(res['object']['queries']) + urls_section
+    return '\n'.join(res['object']['learnings']) + urls_section
 
 async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: int, learnings: List[str], visited_urls: List[str], progress: ResearchProgress, report_progress: callable) -> Dict[str, List[str]]:
     try:
-        log(f"Searching for query: {serp_query['query']}")
-        result = searchclient.search(serp_query['query'], max_results=depth)
+        # Extract the query between double quotes
+        match = re.search(r'"([^"]*)"', serp_query['query'])
+        if match:
+            extracted_query = match.group(1)
+            
+        else:
+            extracted_query = serp_query['query']
+
+        log(f"Searching for query: {extracted_query}")
+        result = crawler.search(extracted_query, max_results=depth)
         log(f"Search results: {result}")
-        new_urls = [item['url'] for item in result]
+        new_urls = result['urls']
         log(f"New URLs: {new_urls}")
 
         markdown_results=[]
@@ -113,10 +120,13 @@ async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: in
         all_urls = visited_urls + new_urls
 
         if new_depth > 0:
+
             log(f"Researching deeper, breadth: {new_breadth}, depth: {new_depth}")
             report_progress({'current_depth': new_depth, 'current_breadth': new_breadth, 'completed_queries': progress.completed_queries + 1, 'current_query': serp_query['query']})
             next_query = f"Previous research goal: {serp_query['researchGoal']}\nFollow-up research directions: {''.join([f'\n{q}' for q in new_learnings['followUpQuestions']])}".strip()
-            return await deep_research(query=next_query, breadth=new_breadth, depth=new_depth, learnings=all_learnings, visited_urls=all_urls, on_progress=report_progress)
+            recursive_result = await deep_research(query=next_query, breadth=new_breadth, depth=new_depth, learnings=all_learnings, visited_urls=all_urls, on_progress=report_progress)
+            return {'learnings': recursive_result.learnings, 'visited_urls': recursive_result.visited_urls}  
+            
         else:
             report_progress({'current_depth': 0, 'completed_queries': progress.completed_queries + 1, 'current_query': serp_query['query']})
             return {'learnings': all_learnings, 'visited_urls': all_urls}
@@ -128,7 +138,7 @@ async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: in
         return {'learnings': [], 'visited_urls': []}
     
 async def process_serp_query_wrapper(serp_query, breadth, depth, learnings, visited_urls, progress, report_progress):
-    return await process_serp_query({'query':serp_query}, breadth, depth, learnings, visited_urls, progress, report_progress)
+    return await process_serp_query(serp_query, breadth, depth, learnings, visited_urls, progress, report_progress)
 
 async def deep_research(query: str, breadth: int, depth: int, learnings: Optional[List[str]] = None, visited_urls: Optional[List[str]] = None, on_progress: Optional[callable] = None) -> ResearchResult:
     learnings = learnings or []
@@ -136,8 +146,14 @@ async def deep_research(query: str, breadth: int, depth: int, learnings: Optiona
     progress = ResearchProgress(current_depth=depth, total_depth=depth, current_breadth=breadth, total_breadth=breadth, total_queries=0, completed_queries=0)
 
     def report_progress(update: Dict[str, Any]) -> None:
-        for key, value in update.items():
-            setattr(progress, key, value)
+        print("report_progress called with:", update)  # Add this line 
+        try:
+            tmp = update.items()
+            for key, value in update.items():
+                setattr(progress, key, value)
+        except AttributeError as e:
+            print(f"Attribute ERROR: {e}")
+
         if on_progress:
             on_progress(progress)
 
@@ -145,11 +161,12 @@ async def deep_research(query: str, breadth: int, depth: int, learnings: Optiona
     report_progress({'total_queries': len(serp_queries['queries']), 'current_query': serp_queries['queries'][0] if serp_queries else None})
 
     tasks = [
-        process_serp_query_wrapper(serp_query, breadth, depth, learnings, visited_urls, progress, report_progress)
-        for serp_query in serp_queries
+        process_serp_query_wrapper({'query':serp_query, 'researchGoal':serp_queries.get('researchGoal', '')[idx] if serp_queries.get('researchGoal') else ''}, breadth, depth, learnings, visited_urls, progress, report_progress)
+        for idx, serp_query in enumerate(serp_queries['queries'])
     ]
+
     results = await asyncio.gather(*tasks)
 
-    all_learnings = list(set([learning for result in results for learning in result['learnings']]))
-    all_visited_urls = list(set(visited_urls))  # Ensure unique URLs
+    all_learnings = list(set(learnings + [learning for result in results for learning in result['learnings']]))
+    all_visited_urls = list(set(visited_urls + [url for result in results for url in result['visited_urls']]))  # Ensure unique URLs
     return ResearchResult(learnings=all_learnings, visited_urls=all_visited_urls)

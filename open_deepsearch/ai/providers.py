@@ -9,6 +9,8 @@ import html2text
 
 from tiktoken import get_encoding
 
+
+
 from .text_splitter import RecursiveCharacterTextSplitter
 
 from dotenv import load_dotenv
@@ -47,38 +49,6 @@ def trim_prompt(prompt: str, context_size: int = int(os.getenv('CONTEXT_SIZE', 1
         return trim_prompt(prompt[:chunk_size], context_size)
 
     return trim_prompt(trimmed_prompt, context_size)
-
-# Generate object function
-async def generate_object(params: Dict[str, Any], is_getting_queries: bool = True) -> Dict[str, Any]:
-    response = openai.chat.completions.create(
-        model=params['model'],
-        messages=[
-            {"role": "system", "content": params['system']},
-            {"role": "user", "content": params['prompt']}
-        ],
-        max_tokens=params.get('max_tokens', 1000),
-        temperature=params.get('temperature', 0.7),
-        top_p=params.get('top_p', 1.0),
-        n=params.get('n', 1),
-        stop=params.get('stop', None)
-    )
-    content = response.choices[0].message.content.strip()
-
-    # Split the content by both '\n\n' and '\n  \n'
-    results = re.split(r'\s*\n', content)
-    queries = []
-    research_goals = []
-
-    for result in results:
-        if re.match(r'^\d+\.', result):
-            queries.append(result)
-        else:
-            research_goals.append(result)
-
-    if is_getting_queries:
-        return {'object': {'queries': queries, 'researchGoal': research_goals}}
-    else:
-        return {'object': {'learnings': queries, 'followUpQuestions': queries}}
 
 
 # Define Search top few number of urls by tavily_client
@@ -135,6 +105,18 @@ class WebFirecrawlApp:
     def __init__(self):
         self.api_key = FIRECRAWL_KEY
         #self.api_url = config.get('apiUrl')
+
+    def search(self,query: str, max_results: int) -> List[Dict[str, Any]]:
+        try:
+            app = FirecrawlApp(api_key=self.api_key)
+            # Search for the query
+            search_result = app.search(query)
+            # Extract URLs from the search result
+            urls = [item['url'] for item in search_result['data']]
+            return {'urls': urls[:max_results]}
+            
+        except Exception as e:
+            print(f"Error searching for {query}: {str(e)}")
 
     async def crawl_url(self, url: str) -> str:
         try:
