@@ -5,7 +5,7 @@ with open('README.md', 'r') as fh:
 
 setup(
     name='open-deepsearch',
-    version='0.1.0',
+    version='0.1.6',
     author='Jason Chuang',
     author_email='chuangtcee@gmail.com',
     description='Deep Research but Open-Sourced, called open-deepsearch',

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "open-deepsearch"  
-version = "0.1.0"
+version = "0.1.6"
 description = "Deep Research but Open-Sourced, called open-deepsearch"
 readme = "README.md"
 authors = [{ name = "Jason Chuang", email = "chuangtcee@gmail.com" }]

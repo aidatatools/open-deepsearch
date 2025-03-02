@@ -31,21 +31,38 @@ class SerpResultSchema(BaseModel):
     followUpQuestions: List[str]
 
 async def generate_serp_queries(query: str, num_queries: int = 3, learnings: Optional[List[str]] = None) -> List[Dict[str, str]]:
+    # Create the initial prompt
+    prompt = (
+        f"Given the following prompt from the user, generate a list of SERP queries to research "
+        f"the topic. Return a maximum of {num_queries} queries, but feel free to return less if "
+        f"the original prompt is clear. Make sure each query is unique and not similar to each "
+        f"other: <prompt>{query}</prompt>"
+    )
+    
+    # Add learnings if available
+    if learnings:
+        prompt += "\n\nHere are some learnings from previous research, use them to generate more specific queries:\n"
+        prompt += "\n".join(learnings)
+    
+    # Generate queries using the AI model
     res = await generate_object({
         'model': custom_model,
         'system': system_prompt(),
-        'prompt': f"""Given the following prompt from the user, generate a list of SERP queries to research the topic. Return a maximum of {num_queries} queries, but feel free to return less if the original prompt is clear. Make sure each query is unique and not similar to each other: <prompt>{query}</prompt>\n\n""" + (f"Here are some learnings from previous research, use them to generate more specific queries: {'\n'.join(learnings)}" if learnings else ""),
+        'prompt': prompt,
         'schema': SerpQuerySchema
     })
+    
     # Separate queries that start with a number followed by a period
     filtered_queries = [query for query in res['object']['queries'] if re.match(r'^\d+\.', query)]
-    research_goals = [goals for goals in res['object']['researchGoal'] if goals.startswith('  ')]
-
+    research_goals = [query for query in res['object']['queries'] if query.startswith('   - ')]
+    
+    # Prepare the response
     ans = {}
     ans['object'] = {}
     ans['object']['queries'] = filtered_queries[:num_queries]
-    ans['object']['researchGoal'] = research_goals[:num_queries]
+    ans['object']['researchGoal'] = research_goals
     
+    # Log the results
     log(f"Created {len(ans['object']['queries'])} queries", ans['object']['queries'])
     log(f"Created {len(ans['object']['researchGoal'])} research goals", ans['object']['researchGoal'])
     
@@ -55,14 +72,33 @@ async def process_serp_result(query: str, result: SearchResponse, num_learnings:
     contents = [trim_prompt(item['markdown'], 25000) for item in result['data'] if item['markdown']]
     log(f"Ran {query}, found {len(contents)} contents")
 
+    # Create content sections without using backslashes in f-strings
+    content_sections = []
+    for content in contents:
+        content_sections.append(f"<content>{content}</content>")
+    formatted_contents = "\n".join(content_sections)
+
+    # Build the prompt using multiple f-strings concatenated with +
+    prompt = (
+        f"Given the following contents from a SERP search for the query <query>{query}</query>, " +
+        f"generate a list of learnings from the contents. Return a maximum of {num_learnings} learnings, " +
+        f"but feel free to return less if the contents are clear. Make sure each learning is unique " +
+        f"and not similar to each other. The learnings should be concise and to the point, as detailed " +
+        f"and information dense as possible. Make sure to include any entities like people, places, " +
+        f"companies, products, things, etc in the learnings, as well as any exact metrics, numbers, " +
+        f"or dates. The learnings will be used to research the topic further." +
+        "\n\n" +
+        f"<contents>{formatted_contents}</contents>"
+    )
+
     res = await generate_object({
         'model': custom_model,
         'abortSignal': asyncio.TimeoutError(60),
         'system': system_prompt(),
-        'prompt': f"""Given the following contents from a SERP search for the query <query>{query}</query>, generate a list of learnings from the contents. Return a maximum of {num_learnings} learnings, but feel free to return less if the contents are clear. Make sure each learning is unique and not similar to each other. The learnings should be concise and to the point, as detailed and information dense as possible. Make sure to include any entities like people, places, companies, products, things, etc in the learnings, as well as any exact metrics, numbers, or dates. The learnings will be used to research the topic further.\n\n<contents>{''.join([f'<content>\n{content}\n</content>' for content in contents])}</contents>""",
+        'prompt': prompt,
         'schema': SerpResultSchema
     }, is_getting_queries=False)
-    #log(f"Created {len(res['object']['learnings'])} learnings", res['object']['learnings'])
+
     return res['object']
 
 async def write_final_report(prompt: str, learnings: List[str], visited_urls: List[str]) -> str:
@@ -72,10 +108,15 @@ async def write_final_report(prompt: str, learnings: List[str], visited_urls: Li
         'system': system_prompt(),
         'prompt': f"""Please write a final report on the topic using the learnings from research. ALL the learnings from research is below : {learnings_string}""",
         'schema': BaseModel
-    },is_getting_queries=False, is_final_report=True)
+    }, is_getting_queries=False, is_final_report=True)
 
-    urls_section = f"\n\n## Sources\n\n{''.join([f'- <{url}>\n' for url in visited_urls])}"
-    return (res['object']['content']) + urls_section
+    # Create the sources section without using backslashes in f-strings
+    url_links = []
+    for url in visited_urls:
+        url_links.append(f"- <{url}>")
+    urls_section = "\n\n## Sources\n\n" + "\n".join(url_links)
+    
+    return res['object']['content'] + urls_section
 
 async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: int, learnings: List[str], visited_urls: List[str], progress: ResearchProgress, report_progress: callable) -> Dict[str, List[str]]:
     try:
@@ -122,7 +163,18 @@ async def process_serp_query(serp_query: Dict[str, str], breadth: int, depth: in
 
             log(f"Researching deeper, breadth: {new_breadth}, depth: {new_depth}")
             report_progress({'current_depth': new_depth, 'current_breadth': new_breadth, 'completed_queries': progress.completed_queries + 1, 'current_query': serp_query['query']})
-            next_query = f"Previous research goal: {serp_query['researchGoal']}\nFollow-up research directions: {''.join([f'\n{q}' for q in new_learnings['followUpQuestions']])}".strip()
+            
+            # Build follow-up questions string without using backslashes in f-strings
+            follow_up_questions = []
+            for q in new_learnings['followUpQuestions']:
+                follow_up_questions.append(q)
+            follow_up_text = "\n".join(follow_up_questions)
+
+            next_query = (
+                f"Previous research goal: {serp_query['researchGoal']}\n"
+                f"Follow-up research directions:\n{follow_up_text}"
+            ).strip()
+
             recursive_result = await deep_research(query=next_query, breadth=new_breadth, depth=new_depth, learnings=all_learnings, visited_urls=all_urls, on_progress=report_progress)
             return {'learnings': recursive_result.learnings, 'visited_urls': recursive_result.visited_urls}  
             
