@@ -33,6 +33,8 @@ deepsearch
 
 ## It only uses OpenAI_KEY and FIRECRAWL_KEY to produce output.md
 
-## Future work
+## You can adjust OPENAI_MODEL="gpt-4o" or "o3-mini" in .env
 
-Fix some minor bugs
+## Watch the video about execution
+
+[![Watch the video](https://github.com/aidatatools/open-deepsearch/blob/main/open_deepsearch/thumbnail/Open-Sourced-DeepResearch.jpg?raw=true)](https://youtu.be/cAnX1IETdHc)
